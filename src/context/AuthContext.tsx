@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { loginUser, verifyOTP, resendOTP as resendOtpApi, forgotPassword as forgotPasswordApi, resetPassword as resetPasswordApi, logoutUser } from '@/utils/authService';
+import { loginUser, verifyOTP, logoutUser } from '@/utils/authService';
 
 type Role = 'student';
 
@@ -31,11 +31,7 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   error: string | null;
-  login: (email: string, password: string) => Promise<{ success: boolean; otpRequired?: boolean; user_id?: string; message?: string }>;
-  verifyOtp: (user_id: string, otp: string) => Promise<boolean>;
-  resendOtp: (user_id: string) => Promise<boolean>;
-  forgotPassword: (email: string) => Promise<boolean>;
-  resetPassword: (params: { user_id: string; otp: string; new_password: string; confirm_password: string }) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<{ success: boolean; message?: string }>;
   logout: () => Promise<void>;
 }
 
@@ -43,9 +39,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within AuthProvider');
   return context;
 };
 
@@ -59,7 +53,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const role = localStorage.getItem('role');
     if (storedProfile && role === 'student') {
       const profile: UserProfile = JSON.parse(storedProfile);
-      const studentUser: User = {
+      setUser({
         id: profile.user_id || '0',
         email: profile.email || '',
         name: profile.username || 'Student',
@@ -69,8 +63,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         semester: profile.semester || undefined,
         section: profile.section || undefined,
         profilePic: profile.profile_image || undefined,
-      };
-      setUser(studentUser);
+      });
     }
     setLoading(false);
   }, []);
@@ -84,12 +77,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setError(result.message || 'Login failed');
         return { success: false, message: result.message || 'Login failed' };
       }
-      if (result.message === 'OTP sent' && result.user_id) {
-        sessionStorage.setItem('pending_user_id', result.user_id);
-        return { success: true, otpRequired: true, user_id: result.user_id };
-      }
+
       const storedProfile = localStorage.getItem('user');
       const role = localStorage.getItem('role');
+
       if (storedProfile && role === 'student') {
         const profile: UserProfile = JSON.parse(storedProfile);
         setUser({
@@ -108,7 +99,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setError('You do not have student access');
         return { success: false, message: 'You do not have student access' };
       }
-      
+
     } catch (err: any) {
       setError(err?.message || 'An unknown error occurred');
       return { success: false, message: err?.message || 'An unknown error occurred' };
@@ -117,65 +108,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const verifyOtp = async (user_id: string, otp: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await verifyOTP({ user_id, otp });
-      if (!res.success) {
-        setError(res.message || 'Invalid OTP');
-        return false;
-      }
-      const storedProfile = localStorage.getItem('user');
-      const role = localStorage.getItem('role');
-      if (storedProfile && role === 'student') {
-        const profile: UserProfile = JSON.parse(storedProfile);
-        setUser({
-          id: profile.user_id || '0',
-          email: profile.email || '',
-          name: profile.username || 'Student',
-          role: 'student',
-          department: profile.department || undefined,
-          branch: profile.branch || undefined,
-          semester: profile.semester || undefined,
-          section: profile.section || undefined,
-          profilePic: profile.profile_image || undefined,
-        });
-        sessionStorage.removeItem('pending_user_id');
-        return true;
-      }
-      setError('You do not have student access');
-      return false;
-    } catch (err: any) {
-      setError(err?.message || 'OTP verification failed');
-      return false;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const resendOtp = async (user_id: string) => {
-    const res = await resendOtpApi({ user_id });
-    return !!res.success;
-  };
-
-  const forgotPassword = async (email: string) => {
-    const res = await forgotPasswordApi({ email });
-    return !!res.success;
-  };
-
-  const resetPassword = async (params: { user_id: string; otp: string; new_password: string; confirm_password: string }) => {
-    const res = await resetPasswordApi(params);
-    return !!res.success;
-  };
-
   const logout = async () => {
     await logoutUser();
     setUser(null);
+    localStorage.removeItem('user');
+    localStorage.removeItem('role');
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, error, login, verifyOtp, resendOtp, forgotPassword, resetPassword, logout }}>
+    <AuthContext.Provider value={{ user, loading, error, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
